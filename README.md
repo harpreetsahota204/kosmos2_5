@@ -101,7 +101,7 @@ import fiftyone as fo
 import fiftyone.operators as foo
 
 # Install PDF loader plugin
-!fiftyone plugins download https://github.com/harpreetsahota204/pdf-loader --overwrite
+!fiftyone plugins download https://github.com/brimoor/pdf-loader
 
 # Load PDF as images
 pdf_loader = foo.get_operator("@brimoor/pdf-loader/pdf_loader")
