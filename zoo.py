@@ -10,7 +10,7 @@ import torch
 import fiftyone as fo
 from fiftyone import Model, SamplesMixin
 
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoProcessor, Kosmos2_5ForConditionalGeneration
 from transformers.utils import is_flash_attn_2_available
 
 logger = logging.getLogger(__name__)
@@ -32,14 +32,21 @@ def get_device():
         return "mps"
     return "cpu"
 
-class Kosmos2_5(Model):
-    """A FiftyOne model for running MiniCPM-V 4.5 vision tasks"""
+class Kosmos2_5(SamplesMixin, Model):
+    """A FiftyOne model for running Kosmos-2.5 vision tasks.
+    
+    Automatically selects optimal dtype based on hardware:
+    - bfloat16 for CUDA devices with compute capability 8.0+ (Ampere and newer)
+    - float16 for older CUDA devices
+    - float32 for CPU/MPS devices
+    """
 
     def __init__(
         self,
         model_path: str,
         operation: str = None,
         system_prompt: str = None,
+        torch_dtype: torch.dtype = None,
         **kwargs
     ):
         
@@ -56,20 +63,36 @@ class Kosmos2_5(Model):
             "device_map":self.device,
             }
         
-        # Only set specific torch_dtype for CUDA devices
-        if self.device == "cuda":
-            model_kwargs["torch_dtype"] = torch.bfloat16
+        # Set dtype based on device and user preference
+        if torch_dtype is not None:
+            self.dtype = torch_dtype
+        elif self.device == "cuda" and torch.cuda.is_available():
+            capability = torch.cuda.get_device_capability()
+            # Enable bfloat16 on Ampere+ GPUs (compute capability 8.0+)
+            if capability[0] >= 8:
+                self.dtype = torch.bfloat16
+                logger.info(f"Using bfloat16 dtype (compute capability {capability[0]}.{capability[1]})")
+            else:
+                self.dtype = torch.float16
+                logger.info(f"Using float16 dtype (compute capability {capability[0]}.{capability[1]})")
+        else:
+            self.dtype = torch.float32  # Default for CPU/MPS
+            logger.info(f"Using float32 dtype for {self.device}")
+        
+        # Only set torch_dtype in model_kwargs if not using default float32
+        if self.dtype != torch.float32:
+            model_kwargs["torch_dtype"] = self.dtype
 
         model_kwargs["attn_implementation"] = "flash_attention_2" if is_flash_attn_2_available() else "sdpa"
 
-        self.model = AutoModel.from_pretrained(
+        self.model = Kosmos2_5ForConditionalGeneration.from_pretrained(
             model_path,
             trust_remote_code=True,
             **model_kwargs
             )
 
-        logger.info("Loading tokenizer")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
+        logger.info("Loading processor")
+        self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         self.model.eval()
 
     @property
@@ -92,30 +115,40 @@ class Kosmos2_5(Model):
         return OPERATIONS[self.operation]
     
     def _parse_box_tags(self, text: str) -> List[Dict]:
-        """Parse bounding boxes from <ref>object</ref><box>x1 y1 x2 y2</box> format.
+        """Parse bounding boxes from <bbox><x_N><y_N><x_N><y_N></bbox>text format.
         
         Args:
-            text: Model output containing ref and box tags
+            text: Model output containing bbox tags
             
         Returns:
-            List of dictionaries with bbox coordinates and labels
+            List of dictionaries with bbox coordinates and text labels
         """
         import re
         
         detections = []
         
+        # Pattern to match bbox tags
+        pattern = r"<bbox><x_\d+><y_\d+><x_\d+><y_\d+></bbox>"
         
-        pattern = 
+        # Find all bbox patterns
+        bboxs_raw = re.findall(pattern, text)
         
-        matches = re.findall(pattern, text)
+        # Split by pattern to get text parts
+        lines = re.split(pattern, text)[1:]
         
-        for match in matches:
-            label = match[0].strip()
-            x1, y1, x2, y2 = match[1:5]
+        # Extract coordinates using list comprehension (like original)
+        bboxs = [re.findall(r"\d+", i) for i in bboxs_raw]
+        bboxs = [[int(j) for j in i] for i in bboxs]
+        
+        # Process each bbox with its corresponding text
+        for i in range(len(lines)):
+            box = bboxs[i]
+            x1, y1, x2, y2 = box
+            text_content = lines[i].strip()
             
             detections.append({
-                'bbox': [int(x1), int(y1), int(x2), int(y2)],
-                'label': label if label else "object"
+                'bbox': [x1, y1, x2, y2],
+                'text': text_content
             })
         
         return detections
@@ -123,11 +156,11 @@ class Kosmos2_5(Model):
     def _to_detections(self, text: str) -> fo.Detections:
         """Convert detection text output to FiftyOne Detections.
         
-        Parses the <ref>object</ref><box>x1 y1 x2 y2</box> format and converts
-        to FiftyOne's format with coordinate normalization from 0-1000 to 0-1 range.
+        Parses the <bbox><x_N><y_N><x_N><y_N></bbox>text format and converts
+        to FiftyOne's format with coordinate normalization to 0-1 range.
         
         Args:
-            text: Model output string containing ref and box tags
+            text: Model output string containing bbox tags
         
         Returns:
             fo.Detections: FiftyOne Detections object containing all converted detections
@@ -140,26 +173,45 @@ class Kosmos2_5(Model):
         # Process each bounding box
         for box in parsed_boxes:
             try:
-                bbox = box['bbox']
-                label = box['label']
+                x1, y1, x2, y2 = box['bbox']
+                text_content = box['text']
                 
-                # Convert coordinates to float and normalize from 0-1000 to 0-1 range
-                x1_norm, y1_norm, x2_norm, y2_norm = map(float, bbox)
+                # Skip invalid boxes where coordinates are reversed
+                if x1 >= x2 or y1 >= y2:
+                    continue
                 
-                x = x1_norm 
-                y = y1_norm 
-                w = (x2_norm - x1_norm) 
-                h = (y2_norm - y1_norm) 
+                # Scale coordinates back to original image space (pixel coordinates)
+                # The model outputs coordinates in the preprocessed image space
+                x1_pixel = x1 * self.scale_width
+                y1_pixel = y1 * self.scale_height
+                x2_pixel = x2 * self.scale_width
+                y2_pixel = y2 * self.scale_height
                 
-                # Create FiftyOne Detection object
+                # Normalize to [0, 1] range for FiftyOne
+                # FiftyOne expects [top-left-x, top-left-y, width, height] in [0, 1] range
+                x_norm = x1_pixel / self.raw_width
+                y_norm = y1_pixel / self.raw_height
+                width_norm = (x2_pixel - x1_pixel) / self.raw_width
+                height_norm = (y2_pixel - y1_pixel) / self.raw_height
+                
+                # Ensure coordinates are within [0, 1] bounds
+                x_norm = max(0, min(1, x_norm))
+                y_norm = max(0, min(1, y_norm))
+                width_norm = max(0, min(1 - x_norm, width_norm))
+                height_norm = max(0, min(1 - y_norm, height_norm))
+                
+                # Create FiftyOne Detection object with text as label
                 detection = fo.Detection(
-                    label=label,
-                    bounding_box=[x, y, w, h]
+                    label="text",
+                    bounding_box=[x_norm, y_norm, width_norm, height_norm]
                 )
+                # Store the actual text content as an attribute
+                if text_content:
+                    detection["text_content"] = text_content
                 detections.append(detection)
                     
             except Exception as e:
-                print(f"Error processing box {box}: {e}")
+                logger.warning(f"Error processing box {box}: {e}")
                 continue
                     
         return fo.Detections(detections=detections)
@@ -187,8 +239,41 @@ class Kosmos2_5(Model):
             ValueError: If no prompt has been set
         """
         
+        # Get the prompt based on the operation
+        prompt = self.system_prompt
+        
+        # Process the image and text through the processor
+        inputs = self.processor(text=prompt, images=image, return_tensors="pt")
+        
+        # Extract height and width for scaling (needed for OCR mode)
+        height, width = inputs.pop("height"), inputs.pop("width")
+        raw_width, raw_height = image.size
+        self.scale_height = raw_height / height
+        self.scale_width = raw_width / width
+        self.raw_width = raw_width
+        self.raw_height = raw_height
+        
+        # Move inputs to device and set proper dtype
+        inputs = {k: v.to(self.device) if v is not None else None for k, v in inputs.items()}
+        inputs["flattened_patches"] = inputs["flattened_patches"].to(self.dtype)
+        
+        # Generate predictions
+        with torch.no_grad():
+            generated_ids = self.model.generate(
+                **inputs,
+                max_new_tokens=1024,
+            )
+        
+        # Decode the generated text
+        generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)
+        output_text = generated_text[0]
+        
+        # Remove the prompt from the output
+        output_text = output_text.replace(prompt, "").strip()
+        
+        # Return based on operation type
         if self.operation == "md":
-            return output_text.strip()
+            return output_text
         elif self.operation == "ocr":
             return self._to_detections(output_text)
 
