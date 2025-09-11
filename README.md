@@ -5,25 +5,37 @@ A FiftyOne model plugin for [Microsoft's Kosmos-2.5](https://huggingface.co/micr
 ## Overview
 
 Kosmos-2.5 is a multimodal large language model designed for document-level text recognition and understanding. Unlike traditional OCR systems, it can:
+
 - Perform high-quality text detection with precise bounding boxes
+
 - Generate clean markdown-formatted text from complex documents
+
 - Handle diverse document types including PDFs, receipts, forms, and handwritten text
+
 - Process text-intensive images with multiple columns, tables, and mixed layouts
 
 ## Features
 
 - **Dual Operation Modes**:
+
   - `ocr`: Extracts text with bounding box coordinates
+
   - `md`: Generates structured markdown from document images
   
 - **Automatic Hardware Optimization**:
+
   - Intelligently selects dtype based on GPU compute capability
+
   - Uses bfloat16 for modern GPUs (Ampere+), float16 for older GPUs
+
   - Falls back to float32 for CPU inference
 
 - **Seamless FiftyOne Integration**:
-  - Works with `apply_model()` for batch processing
+
+  - Works with `apply_model()`
+
   - Returns proper FiftyOne detection format with normalized coordinates
+
   - Compatible with all FiftyOne visualization and analysis tools
 
 ## Installation
@@ -43,8 +55,7 @@ import fiftyone.zoo as foz
 
 # Register the Kosmos-2.5 model source
 foz.register_zoo_model_source(
-    "https://github.com/harpreetsahota204/kosmos2_5", 
-    overwrite=True
+    "https://github.com/harpreetsahota204/kosmos2_5"
 )
 ```
 
@@ -76,6 +87,14 @@ session = fo.launch_app(dataset)
 ```
 
 ### Working with PDFs
+
+Note this is making use of the pdf-loader plugin make sure you have these installed:
+
+`!apt-get install -y poppler-utils`
+
+or `brew install poppler-utils`
+
+`!pip install pdf2image`
 
 ```python
 import fiftyone as fo
@@ -122,47 +141,36 @@ dataset.apply_model(model, label_field="text_extraction")
 ## Output Formats
 
 ### OCR Mode
+
 Returns `fo.Detections` with:
+
 - Bounding boxes in normalized coordinates [0, 1]
+
 - Format: `[top-left-x, top-left-y, width, height]`
+
 - Each detection labeled as "text" with actual content in `text_content` attribute
 
 ### Markdown Mode
+
 Returns raw markdown-formatted text string containing:
+
 - Preserved document structure
+
 - Tables, lists, and formatting
+
 - Clean, readable text output
 
 ## Model Details
 
 - **Architecture**: Multimodal transformer with vision and language encoders
-- **Parameters**: ~900M
+
+- **Parameters**: ~1.37B
+
 - **Input**: Images of any size (automatically preprocessed)
+
 - **Training Data**: Large-scale document and text recognition datasets
+
 - **License**: MIT
-
-## Hardware Requirements
-
-- **Minimum**: 8GB GPU memory (with float16)
-- **Recommended**: 16GB+ GPU memory for optimal performance
-- **CPU Inference**: Supported but significantly slower
-
-## Advanced Configuration
-
-```python
-import torch
-
-# Manually specify dtype
-model = foz.load_zoo_model(
-    "microsoft/kosmos-2.5",
-    torch_dtype=torch.float16  # Force specific precision
-)
-
-# The model automatically detects hardware capabilities:
-# - bfloat16: NVIDIA Ampere and newer (RTX 30xx, 40xx, A100, H100)
-# - float16: Older CUDA GPUs (RTX 20xx, GTX series)
-# - float32: CPU and Apple Silicon
-```
 
 ## Citation
 
@@ -180,7 +188,7 @@ If you use Kosmos-2.5 in your research, please cite:
 
 ## License
 
-This integration is released under the MIT License. The Kosmos-2.5 model itself is also MIT licensed.
+This integration is released under the Apache-2.0 License. The Kosmos-2.5 model itself is also MIT licensed.
 
 ## Acknowledgments
 
