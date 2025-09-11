@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 import fiftyone as fo
-from fiftyone import Model, SamplesMixin
+from fiftyone import Model
 
 from transformers import AutoProcessor, Kosmos2_5ForConditionalGeneration
 from transformers.utils import is_flash_attn_2_available
@@ -32,7 +32,7 @@ def get_device():
         return "mps"
     return "cpu"
 
-class Kosmos2_5(SamplesMixin, Model):
+class Kosmos2_5(Model):
     """A FiftyOne model for running Kosmos-2.5 vision tasks.
     
     Automatically selects optimal dtype based on hardware:
@@ -98,7 +98,7 @@ class Kosmos2_5(SamplesMixin, Model):
     @property
     def media_type(self):
         return "image"
-    
+
     @property
     def operation(self):
         return self._operation
