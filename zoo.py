@@ -292,4 +292,4 @@ class Kosmos2_5(Model):
         """
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
-        return self._predict(image, sample)
+        return self._predict(image)
