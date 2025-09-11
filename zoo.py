@@ -216,7 +216,7 @@ class Kosmos2_5(Model):
                     
         return fo.Detections(detections=detections)
     
-    def _predict(self, image: Image.Image, sample=None) -> Union[fo.Detections, str]:
+    def _predict(self, image: Image.Image) -> Union[fo.Detections, str]:
         """Process a single image through the model and return predictions.
         
         This internal method handles the core prediction logic including:
