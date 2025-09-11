@@ -1,0 +1,29 @@
+{
+    "name": "microsoft/kosmos-2_5",
+    "url": "https://github.com/harpreetsahota204/kosmos2_5",
+    "models": [
+        {
+            "base_name": "microsoft/kosmos-2_5",
+            "base_filename":"kosmos-2_5",
+            "author": "Microsoft",
+            "license": "MIT",
+            "source": "https://huggingface.co/microsoft/kosmos-2.5",
+            "description": "Kosmos-2.5 is a multimodal literate model for machine reading of text-intensive images.",
+            "tags": [
+                "detection",
+                "ocr",
+                "VLM"
+            ],
+            "date_added": "2025-11-09",
+            "requirements": {
+                "packages": ["huggingface-hub", "transformers", "torch", "torchvision"],
+                "cpu": {
+                    "support": true
+                },
+                "gpu": {
+                    "support": true
+                }
+            }
+        }
+    ]
+}
