@@ -3,7 +3,7 @@
     "url": "https://github.com/harpreetsahota204/kosmos2_5",
     "models": [
         {
-            "base_name": "microsoft/kosmos-2_5",
+            "base_name": "microsoft/kosmos-2.5",
             "base_filename":"kosmos-2_5",
             "author": "Microsoft",
             "license": "MIT",
