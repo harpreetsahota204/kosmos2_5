@@ -1,5 +1,7 @@
 # Kosmos-2.5 for FiftyOne
 
+![Kosmos-2.5 Demo](kosmos2_5-hq.gif)
+
 A FiftyOne model plugin for [Microsoft's Kosmos-2.5](https://huggingface.co/microsoft/kosmos-2.5), a multimodal literate model for machine reading of text-intensive images. Kosmos-2.5 excels at two core tasks: generating spatially-aware text blocks (OCR) and producing structured markdown output from images.
 
 ## Overview
